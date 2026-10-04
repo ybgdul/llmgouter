@@ -1,0 +1,25 @@
+# config.yaml example 
+server:
+  port: 8080
+  read_timeout_seconds: 60
+
+backends:
+  - id: "gpu-node-primary"
+    url: "http://localhost:11434" 
+    max_tokens_capacity: 100000  
+    models:
+      - "llama3"
+      - "mistral"
+
+  - id: "gpu-node-secondary"
+    url: "http://192.168.1.100:11434"
+    max_tokens_capacity: 50000
+    models:
+      - "llama3"
+      - "codellama"
+
+# fallback cloud provider
+fallback:
+  enabled: false
+  url: "https://api.openai.com"
+  api_key: "sk-proj-..."
