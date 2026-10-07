@@ -1,18 +1,27 @@
 package server
 
 import (
+	"context"
 	"fmt"
 	"llmgouter/config"
+	"llmgouter/internal/cluster"
+	"llmgouter/internal/loadbalancing"
 	"llmgouter/internal/tokenizers"
 	"net/http"
-	//"net/url"
+	"net/url"
 )
 
 func Run() error { 
-	_, err := config.NewConfig()
+	config, err := config.NewConfig()
 	if err != nil { 
 		return fmt.Errorf("failed to load server configurations: %v", err)
 	}
+
+	manager := cluster.NewClusterManager(config)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	manager.StartBackgroundPoll(ctx)
 
 	tk, err := tokenizers.NewEngine()
 	if err != nil { 
@@ -20,19 +29,12 @@ func Run() error {
 	}
 	defer tk.Tokenizer.Close()
 
-	mux := http.NewServeMux()
+	lb := loadbalancing.NewLoadBalancer(tk, manager)
 
-	mux.HandleFunc("/ping", ping)
+	mux := http.NewServeMux() 
 
-	// for _, resource := range config.Resources {
-	// 	url, _ := url.Parse(resource.DestinationUrl)
-	// 	proxy := NewProxy(url)
-	// 	mux.HandleFunc(resource.Endpoint, ProxyRequestHandler(proxy, url, resource.Endpoint))
-	// }
+	mux.HandleFunc("/ping", lb)
 
-	// if err := http.ListenAndServe(config.Server.Host+":"+config.Server.Port, mux); err != nil { 
-	// 	return fmt.Errorf("Could not start the server: %v", err)
-	// }
 
 	return nil
 }

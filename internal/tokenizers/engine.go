@@ -20,9 +20,19 @@ func NewEngine() (*TokenizerEngine, error) {
 	}, nil
 }
 
-func (t *TokenizerEngine) tokenize() (int, error) { 
-	return 0, fmt.Errorf("unimplemented tokenize method")
+func (t *TokenizerEngine) CountTokens(text string) int { 
+	tokens, _ := t.Tokenizer.Encode(text, true)
+	return len(tokens)
 }
+
+func (t *TokenizerEngine) ExtractPrefixHash(text string, numTokens int) string { 
+	tokens, _ := t.Tokenizer.Encode(text, true)
+	if len(tokens) < numTokens {
+		return fmt.Sprintf("%v", tokens)
+	}
+	return fmt.Sprintf("%v", tokens[:numTokens])
+}
+
 
 
 

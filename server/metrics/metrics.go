@@ -1,10 +1,9 @@
 package metrics
 
-import "time"
-
-type HealthResp struct{ 
-	Status string `json:"status"`
-}
+import (
+	"sync"
+	"time"
+)
 
 type NodeMetrics struct{ 
 	NodeID string `json:"node_id"`
@@ -12,6 +11,9 @@ type NodeMetrics struct{
 	GPU GPUMetrics `json:"gpu"`
 	Workload WorkloadStatus `json:"workload"`
 	Models ModelStatus `json:"models"`
+	mu sync.RWMutex
+	cachedPrefixes map[string]time.Time
+	maxCacheSize int
 }
 
 type GPUMetrics struct{ 
