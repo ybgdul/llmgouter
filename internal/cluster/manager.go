@@ -6,6 +6,7 @@ import (
 	"llmgouter/server/metrics"
 	"log"
 	"net/http"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -19,7 +20,17 @@ type ManagedNode struct{
 	LatestMetrics *metrics.NodeMetrics
 	InFlightTokens int64
 	ActiveStreams int64
+
+	LatestMetricsAt time.Time
 }
+
+func (n *ManagedNode) RLockMetrics() { 
+	n.mu.RLock()
+}
+func (n *ManagedNode) RUnlockMetrics() { 
+	n.mu.RUnlock()
+}
+
 
 type ClusterManager struct {
 	nodes map[string]*ManagedNode
@@ -120,6 +131,26 @@ func (cm *ClusterManager) fetchAllMetrics(ctx context.Context) {
 	}
 }
 
+func (cm *ClusterManager) RefreshNodeMetrics(ctx context.Context, node *ManagedNode) { 
+		if !node.IsHealthy.Load() { 
+			return
+		}
+
+		go func(n *ManagedNode) { 
+			reqCtx, cancel := context.WithTimeout(ctx, cm.pollTimeout)
+			defer cancel()
+
+			m, err := metrics.FetchMetrics(reqCtx, cm.httpClient, n.BaseURL)
+			if err != nil { 
+				return
+			}
+
+			n.mu.Lock()
+			n.LatestMetrics = m
+			n.mu.Unlock()
+		}(node)
+}
+
 func (cm *ClusterManager) MarkUnhealthy(nodeId string) { 
 	if node, exists := cm.nodes[nodeId]; exists { 
 		if node.IsHealthy.Swap(false) {
@@ -137,5 +168,31 @@ func (cm *ClusterManager) GetHealthyNodes() []*ManagedNode {
 	return healthy 
 }
 
+func (n *ManagedNode) IsMetricsStale(ttl time.Duration) bool {
+	n.mu.RLock()
+	defer n.mu.RUnlock()
+	return time.Since(n.LatestMetricsAt) > ttl
+}
 
+func (n *ManagedNode) UpdateFromTelemetry(headers http.Header) {
+	vramStr := headers.Get("X-Node-VRAM-Free")
+	activeStreamStr := headers.Get("X-Node-Active-Streams")
 
+	if vramStr == "" { 
+		return
+	}
+
+	vramFree, _ := strconv.ParseInt(vramStr, 10, 64)
+	activeStreams, _ := strconv.ParseInt(activeStreamStr, 10, 64)
+
+	n.mu.Lock()
+	defer n.mu.Unlock()
+
+	if n.LatestMetrics == nil { 
+		n.LatestMetrics = &metrics.NodeMetrics{}
+	}
+
+	n.LatestMetrics.GPU.VRAMFreeBytes = vramFree
+	n.LatestMetrics.Workload.ActiveStreams = activeStreams
+	n.LatestMetricsAt = time.Now()
+}
