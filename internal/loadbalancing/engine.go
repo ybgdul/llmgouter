@@ -1,12 +1,12 @@
 package loadbalancing
 
 import (
+	"context"
 	"fmt"
 	"llmgouter/internal/cluster"
 	"llmgouter/internal/tokenizers"
 	"sync/atomic"
 	"time"
-	"context"
 )
 
 const ttl = 30 * time.Second

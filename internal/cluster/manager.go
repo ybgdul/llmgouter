@@ -2,6 +2,7 @@ package cluster
 
 import (
 	"context"
+	"encoding/json"
 	"llmgouter/config"
 	"llmgouter/server/metrics"
 	"log"
@@ -81,18 +82,18 @@ func (cm *ClusterManager) StartBackgroundPoll(ctx context.Context) {
 
 	}()
 
-	go func() {
-		ticker := time.NewTicker(5 * time.Second)
-		defer ticker.Stop()
-		for { 
-			select { 
-			case <-ctx.Done():
-				return 
-			case <-ticker.C:
-				cm.fetchAllMetrics(ctx)
-			}
-		}
-	}()
+	// go func() {
+	// 	ticker := time.NewTicker(5 * time.Second)
+	// 	defer ticker.Stop()
+	// 	for { 
+	// 		select { 
+	// 		case <-ctx.Done():
+	// 			return 
+	// 		case <-ticker.C:
+	// 			cm.fetchAllMetrics(ctx)
+	// 		}
+	// 	}
+	// }()
 }
 
 func (cm *ClusterManager) probeAllHealth(ctx context.Context) { 
@@ -107,6 +108,46 @@ func (cm *ClusterManager) probeAllHealth(ctx context.Context) {
 			n.IsHealthy.Store(false)
 		}
 	}
+}
+func (cm *ClusterManager) HandleClusterHealthz(w http.ResponseWriter, r *http.Request) {
+	type NodeSummary struct {
+		ID               string      `json:"id"`
+		BaseURL          string      `json:"base_url"`
+		IsHealthy        bool        `json:"is_healthy"`
+		ActiveStreams    int64       `json:"active_streams"`
+		InFlightTokens   int64       `json:"in_flight_tokens"`
+		LastMetricsAt    time.Time   `json:"last_metrics_at"`
+		LatestMetrics    interface{} `json:"latest_metrics,omitempty"`
+	}
+
+	var nodeSummaries []NodeSummary
+
+	for _, node := range cm.nodes {
+		node.mu.RLock()
+		summary := NodeSummary{
+			ID:               node.ID,
+			BaseURL:          node.BaseURL,
+			IsHealthy:        node.IsHealthy.Load(),
+			ActiveStreams:    node.ActiveStreams,
+			InFlightTokens:   node.InFlightTokens,
+			LastMetricsAt:    node.LatestMetricsAt,
+			LatestMetrics:    node.LatestMetrics,
+		}
+		node.mu.RUnlock()
+
+		nodeSummaries = append(nodeSummaries, summary)
+	}
+
+	response := map[string]interface{}{
+		"status":      "ok",
+		"timestamp":   time.Now().UTC(),
+		"total_nodes": len(cm.nodes),
+		"nodes":       nodeSummaries,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(response)
 }
 
 func (cm *ClusterManager) fetchAllMetrics(ctx context.Context) { 
