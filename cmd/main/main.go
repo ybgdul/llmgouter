@@ -2,9 +2,11 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"llmgouter/config"
 	"llmgouter/internal/cluster"
 	"llmgouter/internal/loadbalancing"
+	"llmgouter/internal/ratelimiting"
 	"llmgouter/internal/tokenizers"
 	"log"
 	"net/http"
@@ -29,8 +31,11 @@ func main() {
 
 	manager := cluster.NewClusterManager(config)
 
+	rateManager := ratelimiting.NewRateManager(60.0, 10.0, 10*time.Minute)
+
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
+	go rateManager.CleanUpStart(ctx, 5*time.Minute)
 	
 	manager.StartBackgroundPoll(ctx)
 
@@ -38,10 +43,11 @@ func main() {
 
 	mux := http.NewServeMux() 
 
+	corePipeline := rateManager.Middleware(lb.TokenizeMiddleware(lb))
 	mux.HandleFunc("/healthz", manager.HandleClusterHealthz)
-	mux.HandleFunc("/v1/chat/completions", lb.TokenizeMiddleware(lb))
+	mux.Handle("/v1/chat/completions", corePipeline)
 
-	serverAddr := ":" + string(config.Server.Port)
+	serverAddr := fmt.Sprintf(":%d", config.Server.Port)
 	server := &http.Server{
 		Addr: serverAddr,
 		Handler: mux,
