@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"llmgouter/internal/sessions"
 	"log"
 	"net/http"
 	"net/http/httputil"
@@ -19,6 +20,7 @@ const ReqInfoKey contextKey = "reqInfo"
 type RequestInfo struct{ 
 	Model string 
 	Prompt string 
+	SessionID string
 	BodyBytes []byte
 }
 
@@ -48,13 +50,20 @@ func (lb *LoadBalancer) TokenizeMiddleware(next http.Handler) http.Handler {
 		}
 
 		var fullPrompt string
-		for _, msg := range payload.Messages { 
+		var firstMessage string
+		for i, msg := range payload.Messages { 
+			if i == 0 { 
+				firstMessage = msg.Content
+			}
 			fullPrompt += msg.Content + "\n"
 		}
+
+		sessionID := sessions.ExtractSessionID(r, firstMessage)
 
 		ctx := context.WithValue(r.Context(), ReqInfoKey, &RequestInfo{
 			Model: payload.Model,
 			Prompt: fullPrompt,
+			SessionID: sessionID,
 			BodyBytes: bodyBytes,
 		})
 
@@ -69,7 +78,7 @@ func (lb *LoadBalancer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	targetNode, releaseFunc, err := lb.LoadBalance(r.Context(), reqInfo.Model, reqInfo.Prompt)
+	targetNode, releaseFunc, err := lb.LoadBalance(r.Context(), reqInfo.Model, reqInfo.Prompt, reqInfo.SessionID)
 	if err != nil { 
 		log.Printf("[PROXY ERROR] %v", err)
 		http.Error(w, fmt.Sprintf("service unavailable: %v", err), http.StatusServiceUnavailable)

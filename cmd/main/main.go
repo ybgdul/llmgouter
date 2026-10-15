@@ -7,6 +7,7 @@ import (
 	"llmgouter/internal/cluster"
 	"llmgouter/internal/loadbalancing"
 	"llmgouter/internal/ratelimiting"
+	"llmgouter/internal/sessions"
 	"llmgouter/internal/tokenizers"
 	"log"
 	"net/http"
@@ -39,7 +40,10 @@ func main() {
 	
 	manager.StartBackgroundPoll(ctx)
 
-	lb := loadbalancing.NewLoadBalancer(tk, manager)
+	session := sessions.NewSessionManager(5*time.Minute)
+	go session.StartSessionCleanup(ctx, 2 *time.Minute)
+
+	lb := loadbalancing.NewLoadBalancer(tk, manager, session)
 
 	mux := http.NewServeMux() 
 

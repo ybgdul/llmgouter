@@ -32,7 +32,6 @@ func (n *ManagedNode) RUnlockMetrics() {
 	n.mu.RUnlock()
 }
 
-
 type ClusterManager struct {
 	nodes map[string]*ManagedNode
 	httpClient *http.Client
@@ -207,6 +206,13 @@ func (cm *ClusterManager) GetHealthyNodes() []*ManagedNode {
 		}
 	}
 	return healthy 
+}
+
+func (cm *ClusterManager) GetNodeByID(id string) (*ManagedNode, bool) { 
+	if node, ok := cm.nodes[id]; ok { 
+		return node, true
+	}
+	return nil, false
 }
 
 func (n *ManagedNode) IsMetricsStale(ttl time.Duration) bool {
